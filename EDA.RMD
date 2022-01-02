@@ -1,0 +1,202 @@
+---
+title: "Project1.1"
+author: "Shubhi Saxena"
+date: "12/4/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(lubridate)
+```
+
+# Reading the files
+
+```{r}
+dir1 <- "D:/IDMP/Project"
+f_data <- read_csv(file.path(dir1 , "features.csv"))
+s_data <- read_csv(file.path(dir1 , "stores.csv"))
+train_data <- read_csv(file.path(dir1 , "train.csv"))
+test_data <- read_csv(file.path(dir1, "test.csv"))
+in_data <- inner_join(f_data , s_data , by = c("Store"))
+wal_data <- inner_join(in_data , train_data , by = c("Store", "Date" , "IsHoliday"))
+```
+
+# Preprocessing the Data
+
+-> Changing th Holiday Variable
+
+```{r}
+wal_data$IsHoliday[wal_data$IsHoliday=="TRUE"]<-1
+wal_data$IsHoliday[wal_data$IsHoliday== "FALSE"]<-0
+head(wal_data)
+```
+-> Check for NAs
+```{r}
+sum(is.na(wal_data))
+```
+```{r}
+colSums(is.na(wal_data))
+```
+-> Dealing with NAs
+```{r}
+wal_data[is.na(wal_data)] <- 0 
+```
+```{r}
+colSums(is.na(wal_data))
+```
+-> Keeping only positive weekly sales data
+
+```{r}
+wal_data<- wal_data[wal_data$Weekly_Sales> 0, ]
+```
+
+# Univariate Analysis
+
+-> Markdown Variable analysis
+
+```{r}
+Mr1<-aggregate(MarkDown1 ~ Date , data=wal_data, sum)
+Mr2<-aggregate(MarkDown2 ~ Date , data=wal_data, sum)
+Mr3<-aggregate(MarkDown3 ~ Date , data=wal_data, sum)
+Mr4<-aggregate(MarkDown4 ~ Date , data=wal_data, sum)
+Mr5<-aggregate(MarkDown5 ~ Date , data=wal_data, sum)
+```
+
+```{r}
+#png("MarkdownTrend.png", width = 800, height = 550, res=150)
+col=c("MR1"="red","MR2"="blue","MR3"="green","MR4"="yellow","MR5"= "orange")
+g1<- ggplot()+
+  geom_line(data=Mr1,aes(x=Date,y=MarkDown1,color="MR1"),size=0.8)+
+  geom_line(data=Mr2,aes(x=Date,y=MarkDown2,color='MR2'),size=0.8)+
+  geom_line(data=Mr3,aes(x=Date,y=MarkDown3,color='MR3'),size=0.8)+
+  geom_line(data=Mr4,aes(x=Date,y=MarkDown4,color='MR4'),size=0.8)+
+  geom_line(data=Mr5,aes(x=Date,y=MarkDown5,color='MR5'),size=0.8)+
+  scale_x_date(breaks= seq(as.Date("2010-02-05"),
+                           as.Date("2013-01-01"),by="4 months"),
+               date_labels="%b\n%Y")+
+  labs(title="Trend of Markdown all over the dataset", x="Date",
+       y="value of markdown ")
+  g1+ scale_color_manual(values=col)+theme_minimal()
+  
+
+
+```
+Inference:
+
+1. We can see that till December 2011 there were no markdown values available
+
+2.All markdown values are giving a spike at start like in month of january 2012 and in start markdown 3 is highest but after start markdown 1 is high throughout dataset
+
+-> Type of stores
+
+```{r}
+typeA <- wal_data[wal_data$Type=='A',]
+type1<- aggregate(Weekly_Sales ~Date,data=typeA, sum)
+typeB <- wal_data[wal_data$Type=='B',]
+type2<- aggregate(Weekly_Sales ~Date,data=typeB, sum)
+typeC <- wal_data[wal_data$Type=='C',]
+type3<- aggregate(Weekly_Sales ~Date,data=typeC, sum)
+
+```
+
+```{r}
+vals <- c("typeA" ="red","typeB"="blue","typeC"="green")
+gg<- ggplot()+
+  geom_line(data=type1,aes(x=Date,y=Weekly_Sales,color="typeA"),size=0.8)+
+  geom_line(data=type2,aes(x=Date,y=Weekly_Sales,color="typeB"),size=0.8)+
+  geom_line(data=type3,aes(x=Date,y=Weekly_Sales,color="typeC"),size=0.8)+
+  scale_x_date(breaks= seq(as.Date("2010-02-05"),
+                           as.Date("2013-01-01"),by="6 months"),
+               date_labels="%b\n%Y")+
+  labs(title="Trend of type of Store and weekly sales",
+       x = "Date",y="Weekly Sales")
+ 
+
+gg+ scale_color_manual(values = vals)+theme_minimal()
+
+  
+```
+Inference:
+
+1. There is sesonality in weekly sales of Type A and Type B with increase in weekly sales around november and december of each year
+
+2.Type C store weekly sales doesn't rise just like type A and type B ,it is fluctuating around its mean values only
+
+-> Temperature
+
+```{r}
+temp<- aggregate(Temperature ~Date,data=wal_data, mean)
+gg<- ggplot()+
+  geom_line(data=temp,aes(x=Date,y=Temperature),size=0.8)+
+  scale_x_date(breaks= seq(as.Date("2010-02-05"),
+                           as.Date("2013-01-01"),
+                           by="6 months"),
+               date_labels="%b\n%Y")+theme_minimal()
+  
+gg
+```
+# Multivariate Analysis
+
+1. Sales and Store Number
+```{r}
+#png("Stores.png", width = 800, height = 550, res=150)
+wal_data %>%
+  ggplot(aes(x=as.factor(Store),Weekly_Sales, fill=as.factor(Store)))+
+  geom_boxplot()+
+  ylim(c(20000,80000))+
+  labs(title="Box Plot of Weekly Sales by Store Number",
+       x="Store",y="Weekly Sales in Thousands")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 0.8, 
+    size = 10),legend.position = "none")
+#dev.off()
+```
+Inference:
+
+1.We can see that store 4,10 and 20 has highest weekly sales throughout and average weekly sales is around 10000
+
+2.We can plot type als0 with store to see what is the type of store which are creating big impact on weekly sales
+
+
+2. Sales, Store Number and its type
+```{r}
+wal_data %>%
+  ggplot(aes(x=as.factor(Store),Weekly_Sales, fill=as.factor(Type)))+
+  geom_boxplot()+
+  ylim(c(20000,80000))+
+  labs(title="Box Plot of Weekly Sales by Store Number and its Type",x="Store",y="Weekly Sales in Thousands",
+       fill="Type")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 0.8, 
+    size = 10),legend.position = "top")
+```
+Inference:
+
+1.We can interpret from box plot that mean of most of the type A store are higher as compared to type B and C .
+
+2.Therefore we can say that type A store will be dominant in overall weekly sales from each store
+
+
+3. Sales, Store Number and IsHoliday
+
+```{r}
+wal_data %>%
+  ggplot(aes(x=as.factor(Store),Weekly_Sales, fill=factor(IsHoliday,label=c("False","True"))))+
+  geom_boxplot(outlier.shape = NA)+
+  ylim(c(0,100000))+
+  labs(title="Box Plot of Weekly Sales by Store Number and Holiday",x="Store",
+       y="Weekly Sales in Thousands",
+       fill="IsHoliday")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 0.8, 
+    size = 10),legend.position = "top")
+```
+Inference:
+
+1.From plot we can see that weekly sales of all store on holiday is higher as compared to non holiday week.
+
+2.So,yes holiday weeks are creating huge impact and can be treated as important feature also in determining the weekly sales
+

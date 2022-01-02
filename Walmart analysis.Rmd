@@ -1,0 +1,109 @@
+---
+title: "Walmart analysis"
+author: "Shuchita Mishra"
+date: "11/11/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Walmart Analysis
+
+# loading libraries
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(lubridate)
+
+dir1 <- "~/Desktop/DS5110 IDMP/Project/Walmart/data/"
+f_data <- read_csv(file.path(dir1 , "features.csv"))
+s_data <- read_csv(file.path(dir1 , "stores.csv"))
+train_data <- read_csv(file.path(dir1 , "train.csv"))
+test_data <- read_csv(file.path(dir1, "test.csv"))
+
+in_data <- inner_join(f_data , s_data , by = c("Store"))
+wal_data <- inner_join(in_data , train_data , by = c("Store", "Date" , "IsHoliday"))
+
+#w_data <- list.files(
+#  path = "~/Desktop/DS5110 IDMP/Project/Walmart/data",
+#  pattern = "*.csv") %>% lapply(read_csv) %>% bind_rows()
+
+names(wal_data)
+
+ggplot(data = wal_data , 
+       mapping = aes(x = log10(Weekly_Sales)))+
+  geom_histogram()+
+  labs(title = "Weekly Sales distribution",
+       x = "Log of Weekly Sales",
+       y = "Count")+
+  theme_minimal()
+
+#Most profitable Month
+w_data <- wal_data %>% mutate(Month = month(Date, label = TRUE))
+
+mean_by_Month <-aggregate(mean_model$Weekly_Sales,by=list(mean_model$Month),FUN=mean, na.rm=TRUE)
+colnames(mean_by_Month) <- c("Month", "Avg. Weekly Sales")
+
+mean_model <- w_data %>%
+  group_by(Store, Dept, Month, IsHoliday) %>% 
+  summarise(Weekly_Sales = mean(Weekly_Sales, na.rm = TRUE))
+
+#mean_model$Month <- factor(mean_model$Month, labels = c(unique(mean_model$Month)))
+
+ggplot(data = mean_model,
+       mapping = aes(x = Month, y = log10(Weekly_Sales)))+
+  geom_histogram(stat = "identity", color = "Dark Green")+
+  labs(title = "The weekly sales are highest during holiday months",
+       x = "Month", 
+       y = "Log of Weekly Sales")+
+  theme_minimal()
+
+ggplot(data = mean_by_Month,
+       mapping = aes(reorder(Month, `Avg. Weekly Sales`) , `Avg. Weekly Sales` , fill = `Avg. Weekly Sales`))+
+  geom_histogram(stat = "identity")+
+  labs(title = "Closer look : The weekly sales are highest in November",
+       x = "Month", 
+       y = "Average Weekly Sales")+
+  theme_minimal()+
+  scale_fill_gradient(low = "Yellow" , high = "Red" , na.value = NA)
+
+ggplot(data = w_data,
+       mapping = aes(x = reorder(Month,log10(Weekly_Sales)), y = log10(Weekly_Sales), group = Month, fill = Weekly_Sales))+
+  geom_boxplot(mapping = aes(color = Weekly_Sales))+
+  labs(title = "The weekly sales are highest in November",
+       x = "Month", 
+       y = "Log10 of Weekly Sales")+
+  theme_minimal()
+
+#Most profitable Store
+mean_by_Store <-aggregate(mean_model$Weekly_Sales,by=list(mean_model$Store),FUN=mean, na.rm=TRUE)
+colnames(mean_by_Store) <- c("Store", "Avg. Weekly Sales")
+
+ggplot(data = mean_by_Store,
+       mapping = aes(x = reorder(Store,log10(`Avg. Weekly Sales`)), y = log10(`Avg. Weekly Sales`), fill = `Avg. Weekly Sales`))+
+  geom_histogram(stat = "identity")+
+  coord_cartesian(ylim = c(3.5,5))+
+  labs(title = "Store 4 has the highest Average Weekly Sales",
+       x = "Store", 
+       y = "Log of Weekly Sales")+
+  theme(text = element_text(size = 7), axis.text.x = element_text(angle = 90,hjust=1))+
+  scale_fill_gradient(low = "Light Blue" , high = "Dark Blue" , na.value = NA)
+
+ggplot(data = mean_by_Store,
+       mapping = aes(x = reorder(Store,log10(`Avg. Weekly Sales`)), y = log10(`Avg. Weekly Sales`)))+
+  geom_histogram(stat = "identity")+
+  coord_cartesian(ylim = c(4.4,4.5))+
+  labs(title = "Closer look : Stores 4 and 20 seem to be the most profitable stores",
+       x = "Store", 
+       y = "Log of Weekly Sales")+
+  theme(text = element_text(size = 7), axis.text.x = element_text(angle = 90,hjust=1))+
+  scale_fill_gradient(low = "Blue" , high = "Black" , na.value = NA)
+
+mean_by_Store <- mean_by_Store %>% arrange(desc(`Avg. Weekly Sales`))
+mean_by_Store
+
+
+
+```

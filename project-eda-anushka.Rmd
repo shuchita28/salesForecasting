@@ -1,0 +1,441 @@
+---
+title: "R Notebook"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+#install.packages("uroot")
+
+```
+
+
+```{r}
+library(uroot)
+```
+
+
+```{r message=FALSE, warning = FALSE}
+library(dplyr)
+library(readr)
+library(tidyverse)
+library(lubridate)
+library(modelr)
+library(tidyverse)
+
+```
+
+```{r}
+feature <- read.csv("/Users/anushkapatil/Desktop/ R_assignments/r_project/features.csv", header = TRUE, na.strings=":", row.names=NULL)
+stores <- read.csv("/Users/anushkapatil/Desktop/ R_assignments/r_project/stores.csv", header = TRUE, na.strings=":", row.names=NULL)
+test <- read.csv("/Users/anushkapatil/Desktop/ R_assignments/r_project/test.csv", header = TRUE, na.strings=":", row.names=NULL)
+train <- read.csv("/Users/anushkapatil/Desktop/ R_assignments/r_project/train.csv", header = TRUE, na.strings=":", row.names=NULL)
+```
+
+#Lets explore the store data
+
+```{r}
+head(train)
+```
+# Let's explore what these types of stores are. Seems like they might have something to do with Size
+
+```{r}
+store_aggregate <- aggregate(Size  ~ Type , stores, mean)
+ggplot(data=store_aggregate, aes(x=Type, y=Size,fill = Type)) +
+  geom_bar(stat="identity")
+```
+#Clearly we see that Stores of type A are the biggest on an average, followed by B and C.
+
+
+
+#Now in the train DF, there is a column called isHoliday. My intuition is that if its a holiday, the sales will be more. Let's see if its true.
+
+```{r}
+Holiday_eda <- aggregate(Weekly_Sales  ~ IsHoliday , train, mean)
+ggplot(data=Holiday_eda, aes(x=IsHoliday, y=Weekly_Sales,fill = IsHoliday)) +
+  geom_bar(stat="identity")
+```
+#So yes there is a slight increase in sales on an average on days of holidays
+
+```{r}
+head(train)
+```
+
+
+
+```{r}
+library(lubridate)
+train$Date2 <- mdy(train$Date)
+```
+```{r}
+train$Date2 <- as.Date(train$Date , format = "%Y-%m-%d")
+```
+
+```{r}
+head(train)
+```
+
+
+```{r}
+feature_store <- feature %>%
+left_join(stores, by = "Store")
+feature_store
+```
+```{r}
+unique(train$Dept)
+```
+#Now i will remove the department column
+```{r}
+train <- train %>% 
+  group_by(Store, Date, IsHoliday) %>% 
+  summarize(Weekly_Sales = sum(Weekly_Sales))
+```
+
+
+
+
+```{r}
+train_walmart = train%>%
+mutate(IsHoliday=NULL)%>%
+left_join(feature_store, by = c("Store"="Store","Date"="Date"))
+train_walmart
+```
+
+
+
+```{r}
+train_walmart$Date = as.Date(train_walmart$Date)
+```
+
+```{r}
+train_walmart$Year  <- year(train_walmart$Date)
+train_walmart$Month <- month(train_walmart$Date)
+#df$DM <- month(df$Date) + day(df$Date)
+train_walmart$DM <- as.integer(format(train_walmart$Date, "%j"))
+```
+
+```{r}
+train_walmart2 <- aggregate( Weekly_Sales ~ Date , train_walmart, mean)
+train_walmart2$Year  <- year(train_walmart2$Date)
+train_walmart2$Month <- month(train_walmart2$Date)
+#df$DM <- month(df$Date) + day(df$Date)
+train_walmart2$DM <- as.integer(format(train_walmart2$Date, "%j"))
+train_walmart2
+```
+
+
+```{r}
+train_walmart2$Weekly_SalesMil = train_walmart2$Weekly_Sales/1000000
+#train_walmart2$Year <-factor(train_walmart2$Year, levels= c("2010","2011","2012"))
+  ggplot(train_walmart2,aes(x=Date,y=Weekly_SalesMil)) +
+  geom_line(color="steelblue3") +
+    scale_x_date(breaks= seq(as.Date("2010-02-05"),as.Date("2013-01-01"),by="4 months"),date_labels="%b\n%Y")+
+  xlab("Year")+
+  ylab("Weekly sales in dollars in millions") +
+  ggtitle("Average Weekly sales at a Walmart store")
+```
+
+
+
+```{r}
+ train_walmart <- data.frame(lapply(train_walmart, function(x) {
+                  gsub("NA", NA, x)
+              }))
+train_walmart
+```
+```{r}
+train_walmart$Weekly_Sales <- as.numeric(train_walmart$Weekly_Sales)
+train_walmart$Temperature <- as.numeric(train_walmart$Temperature)
+
+train_walmart$Fuel_Price <- as.numeric(train_walmart$Fuel_Price)
+train_walmart$MarkDown1 <- as.numeric(train_walmart$MarkDown1)
+train_walmart$MarkDown2 <- as.numeric(train_walmart$MarkDown2)
+train_walmart$MarkDown3 <- as.numeric(train_walmart$MarkDown3)
+train_walmart$MarkDown4 <- as.numeric(train_walmart$MarkDown4)
+train_walmart$MarkDown5 <- as.numeric(train_walmart$MarkDown5)
+
+train_walmart$CPI <- as.numeric(train_walmart$CPI)
+train_walmart$Unemployment <- as.numeric(train_walmart$Unemployment)
+
+train_walmart$Size <- as.numeric(train_walmart$Size)
+train_walmart$Year <- as.numeric(train_walmart$Year)
+train_walmart$Month <- as.numeric(train_walmart$Month)
+train_walmart$DM <- as.numeric(train_walmart$DM)
+
+
+
+```
+
+#Replace the null values with mean in that column
+
+```{r}
+for(i in 1:ncol(train_walmart)){
+  train_walmart[is.na(train_walmart[,i]), i] <- mean(train_walmart[,i], na.rm = TRUE)
+}
+```
+
+
+```{r}
+train_walmart$IsHoliday [train_walmart$IsHoliday == 'TRUE'] <- 1
+train_walmart$IsHoliday [train_walmart$IsHoliday == 'FALSE'] <- 0
+train_walmart$IsHoliday <- as.numeric(train_walmart$IsHoliday)
+
+train_walmart
+```
+
+
+```{r, results='hide'}
+#install.packages('fpp2', dependencies = TRUE)
+```
+
+
+```{r , results='hide'}
+library(fpp2)
+library(forecast)
+```
+
+
+
+```{r}
+row.names(train_walmart2)<-train_walmart2$Date
+train_walmart2 <- train_walmart2[, -which(names(train_walmart2) == "Date")] 
+train_walmart2
+```
+
+#convert to ts object
+```{r}
+library(lubridate)
+walmart_ts <- ts(
+                train_walmart2$Weekly_Sales, 
+                frequency=365.25/7, 
+                start=decimal_date(ymd("2010-02-05")))
+```
+
+
+
+
+```{r}
+aelecComp <- decompose(walmart_ts)
+autoplot(aelecComp)
+ 
+```
+```{r}
+train_walmart[c("Weekly_Sales" ,"Temperature" ,"Fuel_Price","MarkDown1","MarkDown2" ,"MarkDown3","MarkDown4","MarkDown5","CPI",          "Unemployment","IsHoliday")]
+```
+
+
+
+
+# Now i will plot a acf plot. ACF plot shows correlation between sales of a day and ith lag i.e lag = 10 means correlation between day t and day t-10. Looking at the ACF we can see that the data is stationary- perfect
+
+```{r}
+acf(train_walmart$Weekly_Sales)
+```
+
+# Check for stationary data
+
+```{r}
+library(tseries) 
+adf.test(train_walmart$Weekly_Sales)
+
+```
+#Our p value is lesser then equal to the cut off (0.05), so we reject the Null Hypothesis. 
+#This means our alternative hypothesis is true- i.e data is stationary
+
+```{r}
+res <- cor(train_walmart[c("Weekly_Sales" ,"Temperature" ,"Fuel_Price","MarkDown1","MarkDown2" ,"MarkDown3","MarkDown4","MarkDown5","CPI",          "Unemployment","IsHoliday")])
+round(res, 2)
+```
+
+#I feel Fuel Prices can be removed
+
+```{r}
+model1 <- lm(Weekly_Sales ~ Temperature +MarkDown1+ MarkDown2+ MarkDown3+ MarkDown4+ MarkDown5+CPI+Unemployment+IsHoliday+Fuel_Price,data=train_walmart )
+step(model1)
+```
+
+
+#Split the dataset into different chunks based on stores. Total is 6435 rows. We have 45 different stores, we divide them into 45 different dataframe- list of dataframe based on stores as each store will have different forecast.
+
+```{r}
+train_walmart_split  <- split(train_walmart, f = train_walmart$Store)  
+#ead(train_walmart_split)
+```
+
+```{r}
+#install.packages("MLmetrics")
+```
+
+
+```{r}
+library(forecast)
+library(MLmetrics)
+ts_df <- 1
+for(i in 1:length(train_walmart_split)){
+    
+  curr_df <- train_walmart_split[[i]]
+  row.names(curr_df)<-curr_df$Date
+  
+  curr_df <- curr_df[, -which(names(curr_df) == "Date")] 
+  curr_df <- curr_df[c("Weekly_Sales" ,"MarkDown1","MarkDown2" ,"MarkDown3","MarkDown4","MarkDown5","CPI",          "Unemployment","IsHoliday")]
+  print(curr_df)
+  train <- curr_df[1:120,]
+  valid <- curr_df[121:dim(curr_df)[1],]
+
+  #validation=window(curr_df, start = c(2012,05,18))
+  
+  
+  #ts_train <- ts(train,start = c(2010,06),frequency=365.25/7)
+  #ts_valid <- ts(valid,start = c(2012,21),frequency=365.25/7)
+  
+  linearmodel <- lm( Weekly_Sales ~ MarkDown1 + MarkDown2 + MarkDown3 + MarkDown4 + MarkDown5 + CPI + Unemployment,data=train)
+  #print(summary(linearmodel))
+  #print(myts)  #train <- window(curr_df,start = c(2010-02-05), end  = c(2012-05-18))
+
+  
+  #p1<- autoplot(ts_train[,'Weekly_Sales'], series="Data") +
+  #autoplot(fitted.values(linearmodel),series="Data")+
+  ##xlab("Year") + ylab("") +
+  #ggtitle("Store 1 weekly forecast") +
+  #guides(colour=guide_legend(title=" "))
+  
+  break
+}
+```
+
+```{r message=FALSE, warning = FALSE}
+#install.packages("vars")
+#install.packages("mFilter")
+#install.packages("TSstudio")
+#install.packages("forecast")
+#install.packages("xts", repos="http://cloud.r-project.org")
+
+```
+
+
+
+```{r}
+library(xts)
+library(vars)
+library(mFilter)
+library(tseries)
+library(TSstudio)
+library(forecast)
+library(tidyverse)
+```
+
+
+```{r}
+library(forecast)
+library(MLmetrics)
+ts_df <- 1
+compData <- data.frame(Store = numeric(0), MAPE= numeric(0), p = numeric(0), q = numeric(0), d = numeric(0))
+for(i in 1:length(train_walmart_split)){
+  print(i)
+  curr_df <- train_walmart_split[[i]]
+  row.names(curr_df)<-curr_df$Date
+  
+  curr_df <- curr_df[, -which(names(curr_df) == "Date")] 
+  curr_df <- curr_df[c("Weekly_Sales" ,"MarkDown1","MarkDown2" ,"MarkDown3","MarkDown4","MarkDown5","CPI","Unemployment")]
+  #print(curr_df)
+  curr_df$MarkDown1 ='^'(curr_df$MarkDown1,1/2)
+  curr_df$MarkDown2 ='^'(curr_df$MarkDown2,1/2)
+  curr_df$MarkDown3 ='^'(curr_df$MarkDown3,1/2)
+  curr_df$MarkDown4 ='^'(curr_df$MarkDown4,1/2)
+  curr_df$MarkDown5 ='^'(curr_df$MarkDown5,1/2)
+  
+  train <- curr_df[1:120,]
+  valid <- curr_df[121:dim(curr_df)[1],]
+  
+  mts = ts(train$Weekly_Sales,start = c(2010,06),frequency=365.25/7)
+  #xreg = ts(train[,features],start = c(2010,06),frequency=365.25/7)
+  #newxreg = ts(valid[, features], start = c(2012,21),frequency=365.25/7)
+  features <- c("MarkDown1","MarkDown2" ,"MarkDown3","MarkDown4","MarkDown5","CPI","Unemployment") # exogenous features
+  arimax_model <- auto.arima(x = mts,trace = T,seasonal = F,xreg = as.matrix(train[,features]))
+  #arimax_model <- Arima(y = train$Weekly_Sales ,order=c(3,1,2),seasonal=c(2,1,1), xreg = as.matrix(train[,features]))
+  preds.temporal <- predict(arimax_model, newxreg = as.matrix(valid[, features]))
+  print("here -1")
+  #print()
+  #preds.temporal <- predict(arimax_model, newxreg = as.matrix(valid[, features]))
+  print("here")
+  
+  pred_table <- cbind(preds.temporal$pred, valid$Weekly_Sales)
+  pred_table <- as.data.frame(pred_table)
+  rownames(pred_table) <- rownames(valid)
+  pred_table <- xts(pred_table,order.by = as.Date(rownames(pred_table)))
+
+  colnames(pred_table) <- c("forecast","actual")
+  p1 <- plot(pred_table)
+  #Finding MAPE VALUE
+  mapeValue <- mean(abs(pred_table$actual-pred_table$forecast)/pred_table$actual) * 100
+  
+  #Finding optimal order of ARIMAX
+  ord <- arimaorder(arimax_model)
+  compData[nrow(compData)+1, ] <- c(i, mapeValue,ord['p'],ord['q'],ord['d'])
+  
+  
+  }
+```
+
+# Implementing nnetar model 
+
+```{r}
+#install.packages("thief")
+#install.packages("forecastHybrid")
+```
+
+```{r}
+library(forecastHybrid)
+```
+
+
+
+```{r}
+external_reg <- c("MarkDown1","MarkDown2","MarkDown3","MarkDown4","MarkDown5","CPI","Unemployment")
+external_reg1 <- as.matrix(train[,external_reg])
+external_reg2 <- as.matrix(valid[,external_reg])
+fit <- nnetar(mts, repeats=100, maxit=100, xreg = external_reg1)
+plot(forecast(fit,xreg = external_reg1))
+#predict <- forecast(fit,xreg = external_reg1)
+lines(train)
+```
+
+
+```{r}
+fit
+```
+
+```{r}
+#valid_length = length(valid[,external_reg])
+#fcast <- forecast(fit, xreg=external_reg2,h=valid_length, PI = TRUE)
+#date<-format(lubridate::date_decimal(as.numeric(row.names(as.data.frame(fcast)))),"%Y-%m-%d")
+#fcast1 <- cbind(date,as.data.frame(fcast))
+#autoplot(fcast)
+```
+
+```{r}
+#fcast
+```
+
+# simulating for prediction
+```{r}
+#fcast1
+```
+
+```{r}
+#mapeValue <- mean(abs(valid$Weekly_Sales-predict["Point Forecast"])/valid$Weekly_Sales) * 100
+```
+
+```{r}
+#accuracy(fcast)
+```
+
+```{r}
+
+```
+

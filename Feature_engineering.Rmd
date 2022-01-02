@@ -1,0 +1,208 @@
+---
+title: "Feature_Engineering"
+author: "Shubhi Saxena"
+date: "12/4/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(lubridate)
+```
+
+# Reading the files
+```{r}
+dir1 <- "D:/IDMP/Project"
+f_data <- read_csv(file.path(dir1 , "features.csv"))
+s_data <- read_csv(file.path(dir1 , "stores.csv"))
+train_data <- read_csv(file.path(dir1 , "train.csv"))
+test_data <- read_csv(file.path(dir1, "test.csv"))
+in_data <- inner_join(f_data , s_data , by = c("Store"))
+wal_data <- inner_join(in_data , train_data , by = c("Store", "Date" , "IsHoliday"))
+```
+
+
+# Preprocessing the Data
+
+-> Changing th Holiday Variable
+
+```{r}
+wal_data$IsHoliday[wal_data$IsHoliday=="TRUE"]<-1
+wal_data$IsHoliday[wal_data$IsHoliday== "FALSE"]<-0
+head(wal_data)
+```
+-> Check for NAs
+```{r}
+sum(is.na(wal_data))
+```
+```{r}
+colSums(is.na(wal_data))
+```
+-> Dealing with NAs
+```{r}
+wal_data[is.na(wal_data)] <- 0 
+```
+```{r}
+colSums(is.na(wal_data))
+```
+-> Keeping only positive weekly sales data
+
+```{r}
+wal_data<- wal_data[wal_data$Weekly_Sales> 0, ]
+```
+
+-> Changing the Type Value
+```{r}
+wal_data$Type[wal_data$Type=="A"]<-1
+wal_data$Type[wal_data$Type== "B"]<-2
+wal_data$Type[wal_data$Type=="C"]<-3
+```
+
+->Create columns of Date, Month, year from date
+```{r}
+wal_data$Date <- as.Date(wal_data$Date)
+wal_data$Year  <- year(wal_data$Date)
+wal_data$Month <- month(wal_data$Date)
+wal_data$Day <- day(wal_data$Date)
+#df$DM <- month(df$Date) + day(df$Date)
+```
+
+-> Calculate Days from Christmas
+```{r}
+daysToChristmas <- function(data){
+  daysToC<- 0
+  year <- year(data)
+  if (year == 2010){
+    x = as.Date("2010/12/25")
+    daysToC <- difftime(x,data,units=c("days")) 
+  }
+  else if (year == 2011 & (data < as.Date("2011/12/26"))){
+    x = as.Date("2011/12/25")
+    daysToC<- difftime(x,data,units=c("days"))
+  }
+  else{
+    x = as.Date("2012/12/25")
+    daysToC = difftime(x,data,units=c("days"))
+  }
+  return(daysToC)
+}
+wal_data$DaytoCH <- sapply(wal_data$Date,daysToChristmas)
+```
+
+```{r}
+print(class(wal_data$DaytoCH))
+```
+```{r}
+wal_data %>%
+  filter(DaytoCH > 100)%>%
+  ggplot(aes(x=as.factor(DaytoCH),Weekly_Sales, fill=as.factor(DaytoCH)))+
+  geom_boxplot()+
+  ylim(c(20000,80000))+
+  labs(title="Box Plot of Weekly Sales by Store Number and its Type",x="Store",y="Weekly Sales in Thousands",
+       fill="Type")+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.8, 
+    size = 10),legend.position = "none")
+```
+
+```{r}
+daysToThanksgiving <- function(data){
+  daysToT<- 0
+  year <- year(data)
+  if (year == 2010){
+    x = as.Date("2010/11/26")
+    daysToT <- difftime(x,data,units=c("days")) 
+  }
+  else if (year == 2011 & (data < as.Date("2011/11/25"))){
+    x = as.Date("2011/12/25")
+    daysToT<- difftime(x,data,units=c("days"))
+  }
+  else if (year == 2012 & (data < as.Date("2012/11/23"))){
+    x = as.Date("2012/11/23")
+    daysToT = difftime(x,data,units=c("days"))
+  }
+  else{
+    x = as.Date("2013/11/29")
+    daysToT = difftime(x,data,units=c("days"))
+  }
+  return(daysToT)
+}
+wal_data$DaytoThanks <- sapply(wal_data$Date,daysToThanksgiving)
+```
+
+```{r}
+print(class(wal_data$DaytoThanks))
+```
+
+# Linear Regression
+```{r}
+y = wal_data['Weekly_Sales']
+X = subset(wal_data, select = -Weekly_Sales)
+```
+
+```{r}
+install.packages("caret")
+library(caret) #this package has the createDataPartition function
+set.seed(123)
+```
+```{r}
+index <- sample(nrow(X),nrow(X)*0.70)
+trainingData <- wal_data[index,]
+testingData <- wal_data[-index,]
+X_train <- X[index,]
+X_test<- X[-index,]
+y_train <-y[index,]
+y_test <- y[-index,]
+```
+
+```{r}
+# Build the model on training data
+base.Mod <- lm(Weekly_Sales ~1 , data=trainingData)  # base  model
+all.Mod <- lm(Weekly_Sales ~., data=trainingData) #all feature model
+stepMod <-step(base.Mod, scope=list(lower = base.Mod,upper = all.Mod), direction = "both",trace =0,steps=1000) #step wise selection
+shortlistedVars <- names(unlist(stepMod[[1]])) # get the shortlisted variable.
+#shortlistedVars <- shortlistedVars[!shortlistedVars %in% "(Intercept)"]  # remove intercept 
+print(shortlistedVars)
+```
+
+```{r}
+shortlistedVars <- shortlistedVars[!shortlistedVars %in% "(Intercept)"]  # remove intercept
+print(shortlistedVars)
+```
+```{r}
+install.packages("randomForest")
+
+ctrl_param <- rfeControl(functions = rfFuncs,
+                   method = "repeatedcv",
+                   repeats = 2,
+                   verbose = FALSE)
+ 
+# 
+rfe_lm_profile <- rfe(X_train, as.matrix(y_train),
+                 rfeControl = ctrl_param,
+                 newdata = X_test)
+ 
+rfe_lm_profile
+```
+
+
+
+```{r}
+actuals_preds <- data.frame(cbind(actuals=testingData$Weekly_Sales, predicteds=distPred))  # make actuals_predicteds dataframe.
+correlation_accuracy <- cor(actuals_preds)
+head(correlation_accuracy)
+```
+
+```{r}
+min_max <- mean(apply(actuals_preds, 1, min) / apply(actuals_preds, 1, max))  
+print(min_max)
+```
+# Feature Selection
+
+
+
+

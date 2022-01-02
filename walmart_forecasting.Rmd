@@ -1,0 +1,354 @@
+---
+title: "Walmart sales forecasting"
+author: "Srikanth Kadaba Bhogananda"
+date: "29/11/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+### Packages
+``` {r import packages}
+library(tidyverse)
+library(gbm)
+library(gridExtra)
+```
+
+### Read the datasets
+
+```{r read datsets}
+features_df <- read.csv(
+  file = paste(
+    "C:\\Users\\srikanth\\Desktop\\IDMP - Kylie\\IDMP Project\\",
+    "walmart-recruiting-store-sales-forecasting\\features\\",
+    "features.csv",
+    sep=""))
+
+stores_df <- read.csv(
+  file = paste(
+    "C:\\Users\\srikanth\\Desktop\\IDMP - Kylie\\IDMP Project\\",
+    "walmart-recruiting-store-sales-forecasting\\",
+    "stores.csv",
+    sep=""))
+
+train_df <- read.csv(
+  file = paste(
+    "C:\\Users\\srikanth\\Desktop\\IDMP - Kylie\\IDMP Project\\",
+    "walmart-recruiting-store-sales-forecasting\\train\\",
+    "train.csv",
+    sep=""))
+
+test_df <- read.csv(
+  file = paste(
+    "C:\\Users\\srikanth\\Desktop\\IDMP - Kylie\\IDMP Project\\",
+    "walmart-recruiting-store-sales-forecasting\\test\\",
+    "test.csv",
+    sep=""))
+
+features_df
+stores_df
+train_df
+test_df
+```
+
+# Check if there are any null values in the data frames.
+``` {r check null}
+colSums(is.na(features_df))
+colSums(is.na(stores_df))
+colSums(is.na(train_df))
+colSums(is.na(test_df))
+```
+Points to note here is that Markdown events are not present for all columns, some of the entries are NA. Which means, we have to carefully analyze the effect of markdown events.
+
+# Merge the 3 csv files to train data (so that we get the a joint table)
+``` {r merge frames}
+merged_df <- merge(
+  x = train_df,
+  y = stores_df,
+  all.x = TRUE
+)
+merged_train_df <- merge(
+  x = merged_df,
+  y = features_df,
+  all.x = TRUE
+)
+as_tibble(merged_train_df)
+```
+
+# Convert Date to character (to be split later)
+``` {r convert date}
+merged_train_df$Date <- as.Date(merged_train_df$Date, format = "%Y-%m-%d")
+merged_train_df$Week <- format(merged_train_df$Date, "%V")
+
+merged_train_df <- separate(
+  merged_train_df, "Date", c("Year", "Month", "Day"),
+  sep = "-")
+
+# date_split <- strsplit(merged_train_df$Date, '-')
+# date_split <- as.numeric(unlist(date_split))
+# date_split <- matrix(date_split, dim(merged_train_df)[1], 3, byrow = T)
+# 
+# merged_train_df$Year <- date_split[,1]
+# merged_train_df$Month <- date_split[,2]
+# merged_train_df$Day <- date_split[,3]
+
+as_tibble(merged_train_df)
+```
+
+# Visualize weekly sales to check if any transformations can be applied (because values appear to be large)
+``` {r eda weekly sales}
+ggplot(
+  data = merged_train_df,
+  aes(x = Weekly_Sales)) +
+geom_histogram() +
+labs(x="Weekly Sales") +
+theme_minimal()
+
+```
+
+This is clearly a right skewed distribution, therefore logarithmic transformation will prove helpful.
+* Also, the IsHoliday parameter is not very useful when it comes to weekly sales, as there is not much change in the variables.
+
+
+
+# Some initial EDA to prove sales in weeks are similar across all three years
+``` {r weekly sales EDA}
+ggplot(
+  merged_train_df,
+  aes(
+    x = Month,
+    y = Weekly_Sales,
+    fill = Type)) +
+  geom_col() +
+  facet_wrap(~Year)
+```
+From the above graph, we can see that the weekly sales is not very different for the three given years. The trends for each type of store 'A', 'B' and 'C' are all the same for all three years. In case of 2010, data from January is missing and in case of 2012, November and December months are missing
+
+From the above data, it can be safe to assume that year does not matter in Weekly_Sales prediction (as all annual events are covered by 12 month).
+
+We can also see that the Weekly_Sales for type C does not experience any spike or dips in the weekly sales and it is fairly constant throughout the year.
+
+- Year may not be a strong feature for predicting the weekly sales.
+- Type A stores have higher weekly sales compared to all the other types of stores.
+
+
+``` {r weekly sales based on store size}
+ggplot(
+  merged_train_df,
+  aes(
+    x = Size,
+    y = log10(Weekly_Sales))) +
+  geom_point() +
+  geom_smooth()
+  # facet_wrap(~Year)
+```
+
+As the store size increases, the weekly sales also increases.
+So, store size is going to be considered in the model as well.
+
+
+If you want to include the effects of markdown events, then need to replace the NA values with 0. Or delete the entry from the row.
+``` {r update markdown}
+merged_train_df[is.na(merged_train_df$MarkDown1),]$MarkDown1 <- 0
+merged_train_df[is.na(merged_train_df$MarkDown2),]$MarkDown2 <- 0
+merged_train_df[is.na(merged_train_df$MarkDown3),]$MarkDown3 <- 0
+merged_train_df[is.na(merged_train_df$MarkDown4),]$MarkDown4 <- 0
+merged_train_df[is.na(merged_train_df$MarkDown5),]$MarkDown5 <- 0
+```
+
+Study the effect of markdown events on the graph:
+``` {r markdown1 effetcs}
+plot1 <- ggplot(
+  merged_train_df,
+  aes(
+    x = Month,
+    y = MarkDown1)) +
+  geom_point() +
+  facet_wrap(~Year)
+
+plot2 <- ggplot(
+  merged_train_df,
+  aes(
+    x = Month,
+    y = MarkDown2)) +
+  geom_point() +
+  facet_wrap(~Year)
+
+plot3 <- ggplot(
+  merged_train_df,
+  aes(
+    x = Month,
+    y = MarkDown3)) +
+  geom_point() +
+  facet_wrap(~Year)
+
+plot4 <- ggplot(
+  merged_train_df,
+  aes(
+    x = Month,
+    y = MarkDown4)) +
+  geom_point() +
+  facet_wrap(~Year)
+
+plot5 <- ggplot(
+  merged_train_df,
+  aes(
+    x = Month,
+    y = MarkDown5)) +
+  geom_point() +
+  facet_wrap(~Year)
+
+grid.arrange(plot1, plot2, plot3, plot4, plot5, nrow=3, ncol=2,
+             top = "Relationship between MarkDown events and months")
+```
+
+Looking at the markdown events for different years, we can infer that MarkDown1, MarkDown4 and MarkDown5 are prominent values in the year 2012. The effect of other markdown events can be neglected.
+
+
+Splitting the dataset 30/70 split:
+``` {r split datasets}
+index <- sample(nrow(merged_train_df),nrow(merged_train_df)*0.70)
+merged_train_df <- merged_train_df[index,]
+test_df <- merged_train_df[-index,]
+```
+Using step to identify best variables
+``` {r step model metrics}
+step_model <- step(
+  lm(
+    Weekly_Sales ~ Dept,
+    data= merged_train_df),
+  trace = 1, scope = list(
+    lower = ~ Dept,
+    upper = ~ Dept + Size + MarkDown1 + MarkDown2 + MarkDown3 + MarkDown4 + MarkDown5 + IsHoliday),
+  direction = "forward")
+
+```
+The model so far:
+``` {r linear model1}
+lm_1 <- lm(
+  formula = Weekly_Sales ~ Type + Temperature + MarkDown3 + MarkDown5 + CPI + Unemployment + Size,
+  data = merged_train_df)
+summary(lm_1)
+```
+
+
+Residual analysis for linear model 1(lm_1)
+``` {r model diag lm 1}
+# Scatter plot
+# plot_1 <- combined_df %>%
+#   add_residuals(lm_1, "resid") %>%
+#   ggplot(
+#     aes(
+#       x=infant_mortality_rate_per_1000_births)) +
+#   geom_point(aes(y=resid)) +
+#   labs(
+#     x = "Infant Mortality rate per 1000 births",
+#     y = "Residuals")
+# 
+# # QQ plot
+# plot_2 <- combined_df %>%
+#   add_residuals(lm_1, "resid") %>%
+#   ggplot(
+#     aes(sample = resid)) +
+#   geom_qq()
+# 
+# # Histogram plot
+# plot_3 <- combined_df %>%
+#   add_residuals(lm_1, "resid") %>%
+#   ggplot(
+#     aes(x = resid)) +
+#   geom_histogram() +
+#   labs(x="Residuals") +
+#   theme_minimal()
+# 
+# grid.arrange(plot_1, plot_2, plot_3, nrow = 2, ncol = 2,
+#              top = "Model diagnostics for linear model (without transformations)")
+plot(merged_train_df$Size, lm_1$residuals, pch = 20)
+plot(merged_train_df$MarkDown1, lm_1$residuals, pch = 20)
+plot(merged_train_df$MarkDown4, lm_1$residuals, pch = 20)
+plot(merged_train_df$MarkDown5, lm_1$residuals, pch = 20)
+
+```
+
+For linear regression model, we can use the leaps package to predict the best subset of predictors among all of the predictors.
+``` {r leaps best predictors}
+library(leaps)
+# T <- 60
+# best_subset <- regsubsets(Weekly_Sales ~ .,
+#                           data = merged_train_df,
+#                           nbest = 1,
+#                           )
+```
+
+
+Study the residual plots wrt Weekly_Sales for model diagnostics
+``` {r model diag weekly sales}
+plot(merged_train_df$Weekly_Sales, lm_1$residuals)
+qqnorm(lm_1$residuals)
+qqline(lm_1$residuals)
+# points(merged_train_df$Size, ModelL$fitted.values, pch = 20, col= 'blue')
+# points(merged_train_df$Size, ModelP$fitted.values, pch = 20, col= 'green')
+```
+
+
+``` {r prediction with linear model}
+pred <- predict(lm_1, test_df)
+
+x_ax = 1:length(pred)
+plot(x_ax, test_df$Weekly_Sales, col="blue", pch=20, cex=.9)
+lines(x_ax, pred, col="red", pch=20, cex=.9)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+### Try GBM model on all of the features for now
+``` {r fit gbm model}
+gbm_model <- gbm(
+  Weekly_Sales ~ Dept + Size + MarkDown1 + MarkDown4 + MarkDown5,
+  data = merged_train_df,
+  distribution = "gaussian",
+  n.trees = 500,
+  shrinkage = 0.01)
+```
+
+``` {r gbm model summary}
+# print(gbm_model)
+# summary(gbm_model)
+```
+
+
+``` {r get test date - delete this later}
+index <- sample(nrow(merged_train_df),nrow(merged_train_df)*0.70)
+test_df <- merged_train_df[-index,]
+```
+
+``` {r prediction with value}
+pred <- predict.gbm(gbm_model, test_df)
+x_ax = 1:length(pred)
+plot(x_ax, test_df$Weekly_Sales, col="blue", pch=20, cex=.9)
+lines(x_ax, pred, col="red", pch=20, cex=.9) 
+```
+
+
+
+
+
+
